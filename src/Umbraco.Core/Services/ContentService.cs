@@ -993,8 +993,7 @@ namespace Umbraco.Core.Services
                     FROM umbracoNode
                     JOIN cmsDocument ON umbracoNode.id=cmsDocument.nodeId AND cmsDocument.published=@0
                     WHERE umbracoNode.trashed=@1 AND umbracoNode.id IN (@2)",
-                    true, false, ids);
-                Console.WriteLine(sql.SQL);
+                    true, false, ids);                    
                 var x = uow.Database.Fetch<int>(sql);
                 return ids.Length == x.Count;
             }
@@ -1343,6 +1342,40 @@ namespace Umbraco.Core.Services
                 content.SetValue(property.Alias, property.Value);
 
             return content;
+        }
+
+        public void DeleteBlueprintsOfTypes(IEnumerable<int> contentTypeIds, int userId = 0)
+        {
+            using (new WriteLock(Locker))
+            using (var uow = UowProvider.GetUnitOfWork())
+            {
+                var repository = RepositoryFactory.CreateContentBlueprintRepository(uow);
+
+                var contentTypeIdsA = contentTypeIds.ToArray();
+                var query = new Query<IContent>();
+                if (contentTypeIdsA.Length > 0)
+                {
+                    query.Where(x => contentTypeIdsA.Contains(x.ContentTypeId));
+                }
+                var blueprints = repository.GetByQuery(query).Select(x =>
+                {
+                    ((Content) x).IsBlueprint = true;
+                    return x;
+                }).ToArray();
+
+                foreach (var blueprint in blueprints)
+                {
+                    repository.Delete(blueprint);
+                }
+
+                uow.Events.Dispatch(DeletedBlueprint, this, new DeleteEventArgs<IContent>(blueprints), "DeletedBlueprint");
+                uow.Commit();
+            }
+        }
+
+        public void DeleteBlueprintsOfType(int contentTypeId, int userId = 0)
+        {
+            DeleteBlueprintsOfTypes(new[] {contentTypeId}, userId);
         }
 
         /// <summary>
@@ -1941,6 +1974,96 @@ namespace Umbraco.Core.Services
 
             using (new WriteLock(Locker))
             {
+                using (var uow = UowProvider.GetUnitOfWork())
+                {
+                    var asArray = items.ToArray();
+                    var saveEventArgs = new SaveEventArgs<IContent>(asArray);
+                    if (raiseEvents && uow.Events.DispatchCancelable(Saving, this, saveEventArgs, "Saving"))
+                    {
+                        uow.Commit();
+                        return false;
+                    }
+
+                    var repository = RepositoryFactory.CreateContentRepository(uow);
+
+                    var i = 0;
+                    foreach (var content in asArray)
+                    {
+                        //If the current sort order equals that of the content
+                        //we don't need to update it, so just increment the sort order
+                        //and continue.
+                        if (content.SortOrder == i)
+                        {
+                            i++;
+                            continue;
+                        }
+
+                        content.SortOrder = i;
+                        content.WriterId = userId;
+                        i++;
+
+                        if (content.Published)
+                        {
+                            //TODO: This should not be an inner operation, but if we do this, it cannot raise events and cannot be cancellable!
+                            var published = _publishingStrategy.Publish(uow, content, userId).Success;
+                            shouldBePublished.Add(content);
+                        }
+                        else
+                            shouldBeSaved.Add(content);
+
+                        repository.AddOrUpdate(content);
+                        //add or update a preview
+                        repository.AddOrUpdatePreviewXml(content, c => _entitySerializer.Serialize(this, _dataTypeService, _userService, c));
+                    }
+
+                    foreach (var content in shouldBePublished)
+                    {
+                        //Create and Save ContentXml DTO
+                        repository.AddOrUpdateContentXml(content, c => _entitySerializer.Serialize(this, _dataTypeService, _userService, c));
+                    }
+
+                    if (raiseEvents)
+                    {
+                        saveEventArgs.CanCancel = false;
+                        uow.Events.Dispatch(Saved, this, saveEventArgs, "Saved");
+                    }
+
+                    if (shouldBePublished.Any())
+                    {
+                        //TODO: This should not be an inner operation, but if we do this, it cannot raise events and cannot be cancellable!
+                        _publishingStrategy.PublishingFinalized(uow, shouldBePublished, false);
+                    }
+
+                    Audit(uow, AuditType.Sort, "Sorting content performed by user", userId, 0);
+                    uow.Commit();
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Sorts a collection of <see cref="IContent"/> objects by updating the SortOrder according
+        /// to the ordering of node Ids passed in.
+        /// </summary>
+        /// <remarks>
+        /// Using this method will ensure that the Published-state is maintained upon sorting
+        /// so the cache is updated accordingly - as needed.
+        /// </remarks>
+        /// <param name="ids"></param>
+        /// <param name="userId"></param>
+        /// <param name="raiseEvents"></param>
+        /// <returns>True if sorting succeeded, otherwise False</returns>
+        public bool Sort(int[] ids, int userId = 0, bool raiseEvents = true)
+        {
+            var shouldBePublished = new List<IContent>();
+            var shouldBeSaved = new List<IContent>();
+
+            using (new WriteLock(Locker))
+            {
+                var allContent = GetByIds(ids).ToDictionary(x => x.Id, x => x);
+                var items = ids.Select(x => allContent[x]);
+
                 using (var uow = UowProvider.GetUnitOfWork())
                 {
                     var asArray = items.ToArray();

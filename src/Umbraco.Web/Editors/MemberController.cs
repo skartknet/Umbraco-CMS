@@ -256,6 +256,7 @@ namespace Umbraco.Web.Editors
         /// </summary>
         /// <returns></returns>        
         [FileUploadCleanupFilter]
+        [OutgoingEditorModelEvent]
         public MemberDisplay PostSave(
             [ModelBinder(typeof(MemberBinder))]
                 MemberSave contentItem)
@@ -555,7 +556,7 @@ namespace Umbraco.Web.Editors
             var builtInAliases = Constants.Conventions.Member.GetStandardPropertyTypeStubs().Select(x => x.Key).ToArray();
             foreach (var p in contentItem.PersistedContent.Properties)
             {
-                var valueMapped = currProps.SingleOrDefault(x => x.Alias == p.Alias);
+                var valueMapped = currProps.FirstOrDefault(x => x.Alias == p.Alias);
                 if (builtInAliases.Contains(p.Alias) == false && valueMapped != null)
                 {
                     p.Value = valueMapped.Value;

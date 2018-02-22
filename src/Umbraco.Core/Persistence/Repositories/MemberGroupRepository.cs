@@ -132,7 +132,7 @@ namespace Umbraco.Core.Persistence.Repositories
         public IMemberGroup GetByName(string name)
         {
             return IsolatedCache.GetCacheItem<IMemberGroup>(
-                string.Format("{0}.{1}", typeof (IMemberGroup).FullName, name),
+                string.Format("{0}.{1}", typeof(IMemberGroup).FullName, name),
                 () =>
                 {
                     var qry = new Query<IMemberGroup>().Where(group => group.Name.Equals(name));
@@ -140,7 +140,7 @@ namespace Umbraco.Core.Persistence.Repositories
                     return result.FirstOrDefault();
                 },
                 //cache for 5 mins since that is the default in the RuntimeCacheProvider
-                TimeSpan.FromMinutes(5), 
+                TimeSpan.FromMinutes(5),
                 //sliding is true
                 true);
         }
@@ -188,11 +188,11 @@ namespace Umbraco.Core.Persistence.Repositories
                 .Select("un.*")
                 .From("umbracoNode AS un")
                 .InnerJoin("cmsMember2MemberGroup")
-                .On("un.id = cmsMember2MemberGroup.MemberGroup")
-                .LeftJoin("(SELECT umbracoNode.id, cmsMember.LoginName FROM umbracoNode INNER JOIN cmsMember ON umbracoNode.id = cmsMember.nodeId) AS member")
-                .On("member.id = cmsMember2MemberGroup.Member")
-                .Where("un.nodeObjectType=@objectType", new {objectType = NodeObjectTypeId })
-                .Where("member.LoginName=@loginName", new {loginName = username});
+                .On("cmsMember2MemberGroup.MemberGroup = un.id")
+                .InnerJoin("cmsMember")
+                .On("cmsMember.nodeId = cmsMember2MemberGroup.Member")
+                .Where("un.nodeObjectType=@objectType", new { objectType = NodeObjectTypeId })
+                .Where("cmsMember.LoginName=@loginName", new { loginName = username });
             
             return Database.Fetch<NodeDto>(sql)
                 .DistinctBy(dto => dto.NodeId)
