@@ -35,12 +35,19 @@ namespace Umbraco.Web.PropertyEditors
         {
             public MediaPickerPreValueEditor()
             {
-                //create the fields
                 Fields.Add(new PreValueField()
                 {
-                    Key = "multiPicker",
-                    View = "boolean",
-                    Name = "Pick multiple items"
+                    Key = "minNumber",
+                    View = "number",
+                    Name = "Min. items",
+                    Description = "Mininum number of items allowed."                    
+                });
+                Fields.Add(new PreValueField()
+                {
+                    Key = "maxNumber",
+                    View = "number",
+                    Name = "Max. items",
+                    Description = "Maximum number of items allowed."
                 });
                 Fields.Add(new PreValueField()
                 {
@@ -65,7 +72,7 @@ namespace Umbraco.Web.PropertyEditors
                     {
                         {"idType", "udi"}
                     }
-                });
+                });                
             }
         }
     }
