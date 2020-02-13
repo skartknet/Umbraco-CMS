@@ -1,6 +1,6 @@
 //used for the media picker dialog
 angular.module("umbraco").controller("Umbraco.Overlays.LinkPickerController",
-    function ($scope, eventsService, dialogService, entityResource, contentResource, mediaHelper, userService, localizationService, tinyMceService) {
+    function ($scope, eventsService, dialogService, entityResource, mediaHelper, userService, localizationService, tinyMceService) {
         var dialogOptions = $scope.model;
 
         var searchText = "Search...";
@@ -12,17 +12,22 @@ angular.module("umbraco").controller("Umbraco.Overlays.LinkPickerController",
             $scope.model.title = localizationService.localize("defaultdialogs_selectLink");
         }
 
+        var dataTypeId = null;
+        if(dialogOptions && dialogOptions.dataTypeId){
+            dataTypeId = dialogOptions.dataTypeId;
+        }
+
         $scope.dialogTreeEventHandler = $({});
         $scope.model.target = {};
         $scope.searchInfo = {
             searchFromId: null,
             searchFromName: null,
             showSearch: false,
-            ignoreUserStartNodes: dialogOptions.ignoreUserStartNodes,
+            dataTypeId: dataTypeId,
             results: [],
             selectedSearchResults: []
         };
-        $scope.customTreeParams = dialogOptions.ignoreUserStartNodes ? "ignoreUserStartNodes=" + dialogOptions.ignoreUserStartNodes : "";
+        $scope.customTreeParams = dataTypeId !== null ? "dataTypeId=" + dataTypeId : "";
         $scope.showTarget = $scope.model.hideTarget !== true;
 
         if (dialogOptions.currentTarget) {
@@ -45,10 +50,10 @@ angular.module("umbraco").controller("Umbraco.Overlays.LinkPickerController",
                         });
                     });
 
-                    // if a link exists, get the properties to build the anchor name list
-                    contentResource.getById(id, { ignoreUserStartNodes: dialogOptions.ignoreUserStartNodes }).then(function (resp) {
-                        $scope.model.target.url = resp.urls[0];
-                        $scope.anchorValues = tinyMceService.getAnchorNames(JSON.stringify(resp.properties));
+
+                    entityResource.getUrlAndAnchors(id).then(function(resp){
+                        $scope.anchorValues = resp.anchorValues;
+                        $scope.model.target.url = resp.url;
                     });
                 }
             } else if ($scope.model.target.url.length) {
@@ -88,9 +93,9 @@ angular.module("umbraco").controller("Umbraco.Overlays.LinkPickerController",
             if (args.node.id < 0) {
                 $scope.model.target.url = "/";
             } else {
-                contentResource.getById(args.node.id, { ignoreUserStartNodes: dialogOptions.ignoreUserStartNodes }).then(function (resp) {
-                    $scope.model.target.url = resp.urls[0];
-                    $scope.anchorValues = tinyMceService.getAnchorNames(JSON.stringify(resp.properties));
+                entityResource.getUrlAndAnchors(args.node.id).then(function(resp){
+                    $scope.anchorValues = resp.anchorValues;
+                    $scope.model.target.url = resp.url;
                 });
             }
 
@@ -115,12 +120,13 @@ angular.module("umbraco").controller("Umbraco.Overlays.LinkPickerController",
                     startNodeId = -1;
                     startNodeIsVirtual = true;
                 }
+                
                 $scope.mediaPickerOverlay = {
                     view: "mediapicker",
                     startNodeId: startNodeId,
                     startNodeIsVirtual: startNodeIsVirtual,
                     show: true,
-                    ignoreUserStartNodes: dialogOptions.ignoreUserStartNodes,
+                    dataTypeId: dataTypeId,
                     submit: function (model) {
                         var media = model.selectedImages[0];
 
@@ -128,12 +134,12 @@ angular.module("umbraco").controller("Umbraco.Overlays.LinkPickerController",
                         $scope.model.target.udi = media.udi;
                         $scope.model.target.isMedia = true;
                         $scope.model.target.name = media.name;
-                        $scope.model.target.url = mediaHelper.resolveFile(media);
+                        $scope.model.target.url = media.image;
 
                         $scope.mediaPickerOverlay.show = false;
                         $scope.mediaPickerOverlay = null;
 
-                        // make sure the content tree has nothing highlighted 
+                        // make sure the content tree has nothing highlighted
                         $scope.dialogTreeEventHandler.syncTree({
                             path: "-1",
                             tree: "content"

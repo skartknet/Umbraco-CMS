@@ -28,6 +28,7 @@ using Constants = Umbraco.Core.Constants;
 using umbraco.cms.businesslogic;
 using System.Collections;
 using umbraco;
+using umbraco.BusinessLogic.Actions;
 
 namespace Umbraco.Web.Editors
 {
@@ -262,11 +263,10 @@ namespace Umbraco.Web.Editors
         /// Gets the content json for the content id
         /// </summary>
         /// <param name="id"></param>
-        /// <param name="ignoreUserStartNodes">If set to true, user and group start node permissions will be ignored.</param>
         /// <returns></returns>
         [OutgoingEditorModelEvent]
         [EnsureUserPermissionForContent("id")]
-        public ContentItemDisplay GetById(int id, [FromUri]bool ignoreUserStartNodes = false)
+        public ContentItemDisplay GetById(int id)
         {
             var foundContent = GetObjectFromRequest(() => Services.ContentService.GetById(id));
             if (foundContent == null)
@@ -329,7 +329,7 @@ namespace Umbraco.Web.Editors
         }
 
         /// <summary>
-        /// Gets an empty content item for the 
+        /// Gets an empty content item for the
         /// </summary>
         /// <param name="contentTypeAlias"></param>
         /// <param name="parentId"></param>
@@ -536,7 +536,7 @@ namespace Umbraco.Web.Editors
         }
 
         /// <summary>
-        /// Creates a blueprint from a content item 
+        /// Creates a blueprint from a content item
         /// </summary>
         /// <param name="contentId">The content id to copy</param>
         /// <param name="name">The name of the blueprint</param>
@@ -638,7 +638,7 @@ namespace Umbraco.Web.Editors
             // * We still need to save the entity even if there are validation value errors
             // * Depending on if the entity is new, and if there are non property validation errors (i.e. the name is null)
             //      then we cannot continue saving, we can only display errors
-            // * If there are validation errors and they were attempting to publish, we can only save, NOT publish and display 
+            // * If there are validation errors and they were attempting to publish, we can only save, NOT publish and display
             //      a message indicating this
             if (ModelState.IsValid == false)
             {
@@ -666,7 +666,8 @@ namespace Umbraco.Web.Editors
 
             //initialize this to successful
             var publishStatus = Attempt<PublishStatus>.Succeed();
-            var wasCancelled = false;
+            var wasCancelled = false;   //tracks if the operation was cancelled
+            var noop = false;           //tracks if the operation performed no operation (nothing to save)
 
             if (contentItem.Action == ContentSaveAction.Save || contentItem.Action == ContentSaveAction.SaveNew)
             {
@@ -674,6 +675,7 @@ namespace Umbraco.Web.Editors
                 var saveResult = saveMethod(contentItem.PersistedContent);
 
                 wasCancelled = saveResult.Success == false && saveResult.Result.StatusType == OperationStatusType.FailedCancelledByEvent;
+                noop = saveResult.Result.StatusType == OperationStatusType.NoOperation;
             }
             else if (contentItem.Action == ContentSaveAction.SendPublish || contentItem.Action == ContentSaveAction.SendPublishNew)
             {
@@ -693,37 +695,39 @@ namespace Umbraco.Web.Editors
             //lasty, if it is not valid, add the modelstate to the outgoing object and throw a 403
             HandleInvalidModelState(display);
 
-            //put the correct msgs in 
+            //put the correct msgs in
             switch (contentItem.Action)
             {
                 case ContentSaveAction.Save:
                 case ContentSaveAction.SaveNew:
-                    if (wasCancelled == false)
+                    if (wasCancelled)
+                    {
+                        AddCancelMessage(display);
+                        
+                    }
+                    else if (noop == false)
                     {
                         display.AddSuccessNotification(
                             Services.TextService.Localize("speechBubbles/editContentSavedHeader"),
                             contentItem.ReleaseDate.HasValue
-                                ? Services.TextService.Localize("speechBubbles/editContentSavedWithReleaseDateText", new [] { contentItem.ReleaseDate.Value.ToLongDateString(), contentItem.ReleaseDate.Value.ToShortTimeString() })
+                                ? Services.TextService.Localize("speechBubbles/editContentSavedWithReleaseDateText", new[] { contentItem.ReleaseDate.Value.ToLongDateString(), contentItem.ReleaseDate.Value.ToShortTimeString() })
                                 : Services.TextService.Localize("speechBubbles/editContentSavedText")
                         );
-                    }
-                    else
-                    {
-                        AddCancelMessage(display);
                     }
                     break;
                 case ContentSaveAction.SendPublish:
                 case ContentSaveAction.SendPublishNew:
-                    if (wasCancelled == false)
+                    if (wasCancelled)
+                    {
+                        AddCancelMessage(display);
+                    }
+                    else if (noop == false)
                     {
                         display.AddSuccessNotification(
                             Services.TextService.Localize("speechBubbles/editContentSendToPublish"),
                             Services.TextService.Localize("speechBubbles/editContentSendToPublishText"));
                     }
-                    else
-                    {
-                        AddCancelMessage(display);
-                    }
+
                     break;
                 case ContentSaveAction.Publish:
                 case ContentSaveAction.PublishNew:
@@ -753,7 +757,7 @@ namespace Umbraco.Web.Editors
         /// The CanAccessContentAuthorize attribute will deny access to this method if the current user
         /// does not have Publish access to this node.
         /// </remarks>
-        /// 
+        ///
         [EnsureUserPermissionForContent("id", 'U')]
         public HttpResponseMessage PostPublishById(int id)
         {
@@ -820,7 +824,7 @@ namespace Umbraco.Web.Editors
                 var moveResult = Services.ContentService.WithResult().MoveToRecycleBin(foundContent, Security.CurrentUser.Id);
                 if (moveResult == false)
                 {
-                    //returning an object of INotificationModel will ensure that any pending 
+                    //returning an object of INotificationModel will ensure that any pending
                     // notification messages are added to the response.
                     return Request.CreateValidationErrorResponse(new SimpleNotificationModel());
                 }
@@ -830,7 +834,7 @@ namespace Umbraco.Web.Editors
                 var deleteResult = Services.ContentService.WithResult().Delete(foundContent, Security.CurrentUser.Id);
                 if (deleteResult == false)
                 {
-                    //returning an object of INotificationModel will ensure that any pending 
+                    //returning an object of INotificationModel will ensure that any pending
                     // notification messages are added to the response.
                     return Request.CreateValidationErrorResponse(new SimpleNotificationModel());
                 }
@@ -1054,7 +1058,7 @@ namespace Umbraco.Web.Editors
             switch (status.StatusType)
             {
                 case PublishStatusType.Success:
-                case PublishStatusType.SuccessAlreadyPublished:                    
+                case PublishStatusType.SuccessAlreadyPublished:
                     display.AddSuccessNotification(
                             Services.TextService.Localize("speechBubbles/editContentPublishedHeader"),
                             expireDate.HasValue
@@ -1106,7 +1110,7 @@ namespace Umbraco.Web.Editors
 
 
         /// <summary>
-        /// Performs a permissions check for the user to check if it has access to the node based on 
+        /// Performs a permissions check for the user to check if it has access to the node based on
         /// start node and/or permissions for the node
         /// </summary>
         /// <param name="storage">The storage to add the content item to so it can be reused</param>
@@ -1117,7 +1121,6 @@ namespace Umbraco.Web.Editors
         /// <param name="nodeId">The content to lookup, if the contentItem is not specified</param>
         /// <param name="permissionsToCheck"></param>
         /// <param name="contentItem">Specifies the already resolved content item to check against</param>
-        /// <param name="ignoreUserStartNodes">If set to true, user and group start node permissions will be ignored.</param>
         /// <returns></returns>
         internal static bool CheckPermissions(
                 IDictionary<string, object> storage,
@@ -1127,8 +1130,7 @@ namespace Umbraco.Web.Editors
                 IEntityService entityService,
                 int nodeId,
                 char[] permissionsToCheck = null,
-                IContent contentItem = null,
-                bool ignoreUserStartNodes = false)
+                IContent contentItem = null)
         {
             if (storage == null) throw new ArgumentNullException("storage");
             if (user == null) throw new ArgumentNullException("user");
@@ -1139,7 +1141,7 @@ namespace Umbraco.Web.Editors
             if (contentItem == null && nodeId != Constants.System.Root && nodeId != Constants.System.RecycleBinContent)
             {
                 contentItem = contentService.GetById(nodeId);
-                //put the content item into storage so it can be retreived 
+                //put the content item into storage so it can be retreived
                 // in the controller (saves a lookup)
                 storage[typeof(IContent).ToString()] = contentItem;
             }
@@ -1147,11 +1149,6 @@ namespace Umbraco.Web.Editors
             if (contentItem == null && nodeId != Constants.System.Root && nodeId != Constants.System.RecycleBinContent)
             {
                 throw new HttpResponseException(HttpStatusCode.NotFound);
-            }
-
-            if(ignoreUserStartNodes)
-            {
-                return true;
             }
 
             var hasPathAccess = (nodeId == Constants.System.Root)
@@ -1174,6 +1171,12 @@ namespace Umbraco.Web.Editors
             //if there is no content item for this id, than just use the id as the path (i.e. -1 or -20)
             var path = contentItem != null ? contentItem.Path : nodeId.ToString();
             var permission = userService.GetPermissionsForPath(user, path);
+
+            // users are allowed to delete their own content - see ContentTreeControllerBase.GetAllowedUserMenuItemsForNode()
+            if(contentItem != null && contentItem.CreatorId == user.Id)
+            {
+                permission.PermissionsSet.Add(new EntityPermission(0, contentItem.Id, new [] { ActionDelete.Instance.Letter.ToString() } ));
+            }
 
             var allowed = true;
             foreach (var p in permissionsToCheck)

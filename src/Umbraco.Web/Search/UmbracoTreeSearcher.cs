@@ -30,11 +30,11 @@ namespace Umbraco.Web.Search
         /// <param name="ignoreUserStartNodes">If set to true, user and group start node permissions will be ignored.</param>
         /// <returns></returns>
         public IEnumerable<SearchResultItem> ExamineSearch(
-            UmbracoHelper umbracoHelper,
-            string query,
-            UmbracoEntityTypes entityType,
-            int pageSize,
-            long pageIndex, out long totalFound, string searchFrom = null, bool ignoreUserStartNodes = false)
+        UmbracoHelper umbracoHelper,
+        string query,
+        UmbracoEntityTypes entityType,
+        int pageSize,
+        long pageIndex, out long totalFound, string searchFrom = null, bool ignoreUserStartNodes = false)
         {
             var sb = new StringBuilder();
 
@@ -62,7 +62,7 @@ namespace Umbraco.Web.Search
                 case UmbracoEntityTypes.Media:
                     type = "media";
                     var allMediaStartNodes = umbracoContext.Security.CurrentUser.CalculateMediaStartNodeIds(appContext.Services.EntityService);
-                    AppendPath(sb, UmbracoObjectTypes.Media,  allMediaStartNodes, searchFrom, ignoreUserStartNodes, appContext.Services.EntityService);
+                    AppendPath(sb, UmbracoObjectTypes.Media, allMediaStartNodes, searchFrom, ignoreUserStartNodes, appContext.Services.EntityService);
                     break;
                 case UmbracoEntityTypes.Document:
                     type = "content";
@@ -301,19 +301,7 @@ namespace Umbraco.Web.Search
         /// <param name="results"></param>
         /// <returns></returns>
         private IEnumerable<SearchResultItem> MediaFromSearchResults(IEnumerable<SearchResult> results)
-        {
-            var mapped = Mapper.Map<IEnumerable<SearchResultItem>>(results).ToArray();
-            //add additional data
-            foreach (var m in mapped)
-            {
-                //if no icon could be mapped, it will be set to document, so change it to picture
-                if (m.Icon == "icon-document")
-                {
-                    m.Icon = "icon-picture";
-                }
-            }
-            return mapped;
-        }
+            => Mapper.Map<IEnumerable<SearchResultItem>>(results).ToArray();
 
         /// <summary>
         /// Returns a collection of entities for content based on search results
